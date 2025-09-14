@@ -9,8 +9,8 @@ import { RateLimiterMemory } from "rate-limiter-flexible"
 // Create rate limiter for login attempts
 const loginRateLimiter = new RateLimiterMemory({
   points: 5, // Number of attempts
-  duration: 300, // Per 15 minutes (300 seconds)
-  blockDuration: 300, // Block for 15 minutes after limit exceeded
+  duration: 900, // Per 15 minutes (900 seconds)
+  blockDuration: 900, // Block for 15 minutes after limit exceeded
 })
 
 export async function POST(request: NextRequest) {

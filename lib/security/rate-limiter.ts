@@ -5,20 +5,20 @@ import { NextRequest, NextResponse } from "next/server"
 const rateLimiters = {
   auth: new RateLimiterMemory({
     points: 5, // Number of attempts
-    duration: 300, // Per 5 minutes (in seconds)
-    blockDuration: 300, // Block for 5 minutes
+    duration: 900, // Per 15 minutes (in seconds)
+    blockDuration: 900, // Block for 15 minutes
   }),
   
   api: new RateLimiterMemory({
     points: 100, // Number of requests
-    duration: 300, // Per 5 minutes (in seconds)
-    blockDuration: 300, // Block for 5 minutes
+    duration: 900, // Per 15 minutes (in seconds)
+    blockDuration: 300, // Block for 5 minutes (lighter for API)
   }),
   
   sensitive: new RateLimiterMemory({
-    points: 10, // Number of requests
-    duration: 300, // Per 5 minutes (in seconds)
-    blockDuration: 300, // Block for 5 minutes
+    points: 10, // Number of requests  
+    duration: 900, // Per 15 minutes (in seconds)
+    blockDuration: 900, // Block for 15 minutes
   }),
 }
 
