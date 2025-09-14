@@ -1,11 +1,11 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { Eye, EyeOff, Loader2 } from "lucide-react"
+import { Eye, EyeOff, Loader2, Timer } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -20,6 +20,8 @@ export default function RegisterPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
+  const [isBlocked, setIsBlocked] = useState(false)
+  const [countdown, setCountdown] = useState(0)
   const router = useRouter()
 
   const {
@@ -34,12 +36,31 @@ export default function RegisterPage() {
     },
   })
 
+  // Countdown timer for rate limit block
+  useEffect(() => {
+    let timer: NodeJS.Timeout
+    if (countdown > 0) {
+      timer = setTimeout(() => setCountdown(countdown - 1), 1000)
+    } else if (isBlocked && countdown === 0) {
+      setIsBlocked(false)
+      setError("")
+    }
+    return () => clearTimeout(timer)
+  }, [countdown, isBlocked])
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60)
+    const secs = seconds % 60
+    return `${mins}:${secs.toString().padStart(2, '0')}`
+  }
+
   const onSubmit = async (data: RegisterInput) => {
     try {
       setIsLoading(true)
       setError("")
       setSuccess("")
 
+      // Use direct fetch to our rate-limited endpoint
       const response = await fetch("/api/auth/register", {
         method: "POST",
         headers: {
@@ -50,8 +71,17 @@ export default function RegisterPage() {
 
       const result = await response.json()
 
+      if (response.status === 429) {
+        // Rate limit exceeded
+        const retryAfter = result.retryAfter || 1800 // Default to 30 minutes
+        setIsBlocked(true)
+        setCountdown(retryAfter)
+        setError(result.error || "Too many registration attempts. Please try again later.")
+        return
+      }
+
       if (!response.ok) {
-        setError(result.message || "Registration failed")
+        setError(result.error || result.message || "Registration failed")
         return
       }
 
@@ -78,7 +108,15 @@ export default function RegisterPage() {
           <CardContent className="space-y-4">
             {error && (
               <Alert variant="destructive">
-                <AlertDescription>{error}</AlertDescription>
+                <AlertDescription>
+                  {isBlocked && countdown > 0 && (
+                    <div className="flex items-center gap-2">
+                      <Timer className="h-4 w-4" />
+                      <span>Rate limited. Try again in {formatTime(countdown)}</span>
+                    </div>
+                  )}
+                  {(!isBlocked || countdown === 0) && error}
+                </AlertDescription>
               </Alert>
             )}
 
@@ -175,9 +213,17 @@ export default function RegisterPage() {
             </div>
           </CardContent>
           <CardFooter className="flex flex-col space-y-4">
-            <Button type="submit" className="w-full" disabled={isLoading}>
+            <Button 
+              type="submit" 
+              className="w-full" 
+              disabled={isLoading || isBlocked}
+            >
               {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Create Account
+              {isBlocked && countdown > 0 && <Timer className="mr-2 h-4 w-4" />}
+              {isBlocked && countdown > 0 
+                ? `Try again in ${formatTime(countdown)}`
+                : "Create Account"
+              }
             </Button>
             <p className="text-sm text-center text-muted-foreground">
               Already have an account?{" "}

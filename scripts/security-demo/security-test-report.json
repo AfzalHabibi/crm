@@ -1,0 +1,18 @@
+{
+  "rateLimit": {
+    "status": "FAILED",
+    "score": 0,
+    "error": "simulateAttacks is not a function"
+  },
+  "validation": {
+    "status": "FAILED",
+    "score": 0,
+    "error": "simulateValidationAttacks is not a function"
+  },
+  "headers": {
+    "status": "PASSED",
+    "score": 88
+  },
+  "timestamp": "2025-09-14T22:34:33.403Z",
+  "overallScore": 29
+}

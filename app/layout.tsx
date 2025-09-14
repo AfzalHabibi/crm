@@ -12,7 +12,7 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "DepLLC CRM",
   description: "A DepLLC CRM application built with Next.js 15",
-    generator: 'v0.app'
+  generator: 'v0.app'
 }
 
 export default function RootLayout({

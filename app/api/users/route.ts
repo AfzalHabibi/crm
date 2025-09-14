@@ -5,10 +5,15 @@ import User from "@/models/User"
 import { authOptions } from "@/lib/auth-config"
 import { secureRegisterSchema } from "@/lib/security/validation"
 import { applyRateLimit } from "@/lib/security/rate-limiter"
+import { applyExpressRateLimit } from "@/lib/security/express-rate-limit-adapter"
+import { runValidation, userValidation, combineValidations } from "@/lib/security/express-validation"
+import { createSecurityMiddleware, SecurityEventType, logSecurityEvent, applySecurityHeaders } from "@/lib/security/helmet-adapter"
 import { ApiErrorHandler, getClientInfo, createErrorResponse } from "@/lib/security/error-handler"
 import { PermissionManager } from "@/lib/security/permissions"
 import { AuditLogger } from "@/lib/security/audit-logger"
 import { SecurityUtils } from "@/lib/security/validation"
+
+const securityMiddleware = createSecurityMiddleware()
 
 // GET /api/users - Get all users with pagination and search
 export async function GET(request: NextRequest) {
@@ -17,11 +22,35 @@ export async function GET(request: NextRequest) {
     const rateLimitResponse = await applyRateLimit(request, "api")
     if (rateLimitResponse) return rateLimitResponse
 
+    // Backup rate limiting
+    const expressRateLimitResponse = applyExpressRateLimit(request, "api")
+    if (expressRateLimitResponse) return expressRateLimitResponse
+
     const session = await getServerSession(authOptions)
     const clientInfo = getClientInfo(request)
 
+    // Security checks
+    const maliciousCheck = securityMiddleware.detectMaliciousPatterns(request)
+    if (maliciousCheck.isMalicious) {
+      logSecurityEvent(SecurityEventType.MALICIOUS_REQUEST, {
+        ip: clientInfo.ipAddress,
+        userAgent: clientInfo.userAgent,
+        url: request.url,
+        userId: session?.user?.id,
+        severity: 'high',
+        message: `Malicious request detected: ${maliciousCheck.reason}`,
+      })
+      return createErrorResponse("Request blocked for security reasons", 403)
+    }
+
     if (!session) {
       return createErrorResponse("Unauthorized", 401)
+    }
+
+    // Express validator for query parameters
+    const searchValidation = await runValidation(request, userValidation.search)
+    if (!searchValidation.isValid) {
+      return searchValidation.response!
     }
 
     // Check permissions
@@ -105,24 +134,28 @@ export async function GET(request: NextRequest) {
       success: true,
     })
 
-    return ApiErrorHandler.createPaginatedResponse(users, {
+    const response = ApiErrorHandler.createPaginatedResponse(users, {
       page,
       limit,
       total,
       pages,
     })
+
+    return applySecurityHeaders(response)
   } catch (error: any) {
     const session = await getServerSession(authOptions)
     const clientInfo = getClientInfo(request)
 
-    return ApiErrorHandler.handleError(error, {
-      userId: session?.user?.id,
-      userEmail: session?.user?.email,
-      action: "GET_USERS",
-      resource: "USER",
-      ipAddress: clientInfo.ipAddress,
-      userAgent: clientInfo.userAgent,
-    })
+    return securityMiddleware.secure(request, async () =>
+      ApiErrorHandler.handleError(error, {
+        userId: session?.user?.id,
+        userEmail: session?.user?.email,
+        action: "GET_USERS",
+        resource: "USER",
+        ipAddress: clientInfo.ipAddress,
+        userAgent: clientInfo.userAgent,
+      })
+    )
   }
 }
 
@@ -133,8 +166,26 @@ export async function POST(request: NextRequest) {
     const rateLimitResponse = await applyRateLimit(request, "sensitive")
     if (rateLimitResponse) return rateLimitResponse
 
+    // Backup rate limiting
+    const expressRateLimitResponse = applyExpressRateLimit(request, "sensitive")
+    if (expressRateLimitResponse) return expressRateLimitResponse
+
     const session = await getServerSession(authOptions)
     const clientInfo = getClientInfo(request)
+
+    // Security checks
+    const maliciousCheck = securityMiddleware.detectMaliciousPatterns(request)
+    if (maliciousCheck.isMalicious) {
+      logSecurityEvent(SecurityEventType.MALICIOUS_REQUEST, {
+        ip: clientInfo.ipAddress,
+        userAgent: clientInfo.userAgent,
+        url: request.url,
+        userId: session?.user?.id,
+        severity: 'critical',
+        message: `Malicious user creation attempt: ${maliciousCheck.reason}`,
+      })
+      return createErrorResponse("Request blocked for security reasons", 403)
+    }
 
     if (!session) {
       return createErrorResponse("Unauthorized", 401)
@@ -153,6 +204,23 @@ export async function POST(request: NextRequest) {
         errorMessage: "Insufficient permissions to create user",
       })
       return createErrorResponse("Insufficient permissions", 403)
+    }
+
+    // Express validator integration
+    const validationResult = await runValidation(request, userValidation.create)
+    if (!validationResult.isValid) {
+      await AuditLogger.log({
+        userId: session.user.id,
+        userEmail: session.user.email,
+        action: "CREATE_USER_EXPRESS_VALIDATION_ERROR",
+        resource: "USER",
+        details: { errors: validationResult.errors },
+        ipAddress: clientInfo.ipAddress,
+        userAgent: clientInfo.userAgent,
+        success: false,
+        errorMessage: "Express validation failed",
+      })
+      return validationResult.response!
     }
 
     const body = await request.json()
@@ -247,22 +315,37 @@ export async function POST(request: NextRequest) {
       success: true,
     })
 
-    return ApiErrorHandler.createSuccessResponse(
+    const response = ApiErrorHandler.createSuccessResponse(
       user.toJSON(),
       "User created successfully",
       201
     )
+
+    return applySecurityHeaders(response)
   } catch (error: any) {
     const session = await getServerSession(authOptions)
     const clientInfo = getClientInfo(request)
 
-    return ApiErrorHandler.handleError(error, {
-      userId: session?.user?.id,
-      userEmail: session?.user?.email,
-      action: "CREATE_USER",
-      resource: "USER",
-      ipAddress: clientInfo.ipAddress,
+    // Log security event for user creation errors
+    logSecurityEvent(SecurityEventType.DATA_BREACH_ATTEMPT, {
+      ip: clientInfo.ipAddress,
       userAgent: clientInfo.userAgent,
+      url: request.url,
+      userId: session?.user?.id,
+      severity: 'high',
+      message: `User creation error: ${error.message}`,
+      additionalData: { errorType: error.name }
     })
+
+    return securityMiddleware.secure(request, async () =>
+      ApiErrorHandler.handleError(error, {
+        userId: session?.user?.id,
+        userEmail: session?.user?.email,
+        action: "CREATE_USER",
+        resource: "USER",
+        ipAddress: clientInfo.ipAddress,
+        userAgent: clientInfo.userAgent,
+      })
+    )
   }
 }

@@ -5,10 +5,15 @@ import User from "@/models/User"
 import { authOptions } from "@/lib/auth-config"
 import { secureUpdateUserSchema } from "@/lib/security/validation"
 import { applyRateLimit } from "@/lib/security/rate-limiter"
+import { applyExpressRateLimit } from "@/lib/security/express-rate-limit-adapter"
+import { runValidation, userValidation, combineValidations } from "@/lib/security/express-validation"
+import { createSecurityMiddleware, SecurityEventType, logSecurityEvent, applySecurityHeaders } from "@/lib/security/helmet-adapter"
 import { ApiErrorHandler, getClientInfo, createErrorResponse } from "@/lib/security/error-handler"
 import { PermissionManager } from "@/lib/security/permissions"
 import { AuditLogger } from "@/lib/security/audit-logger"
 import { SecurityUtils } from "@/lib/security/validation"
+
+const securityMiddleware = createSecurityMiddleware()
 
 // GET /api/users/[id] - Get user by ID
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
@@ -16,11 +21,35 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     const rateLimitResponse = await applyRateLimit(request, "api")
     if (rateLimitResponse) return rateLimitResponse
 
+    // Backup rate limiting
+    const expressRateLimitResponse = applyExpressRateLimit(request, "api")
+    if (expressRateLimitResponse) return expressRateLimitResponse
+
     const session = await getServerSession(authOptions)
     const clientInfo = getClientInfo(request)
 
+    // Security checks
+    const maliciousCheck = securityMiddleware.detectMaliciousPatterns(request)
+    if (maliciousCheck.isMalicious) {
+      logSecurityEvent(SecurityEventType.MALICIOUS_REQUEST, {
+        ip: clientInfo.ipAddress,
+        userAgent: clientInfo.userAgent,
+        url: request.url,
+        userId: session?.user?.id,
+        severity: 'high',
+        message: `Malicious user access attempt: ${maliciousCheck.reason}`,
+      })
+      return createErrorResponse("Request blocked for security reasons", 403)
+    }
+
     if (!session?.user) {
       return createErrorResponse("Unauthorized", 401)
+    }
+
+    // Express validator for ID parameter
+    const idValidation = await runValidation(request, userValidation.id)
+    if (!idValidation.isValid) {
+      return idValidation.response!
     }
 
     // Validate ObjectId format
@@ -60,7 +89,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         success: false,
         errorMessage: "User not found",
       })
-      return ApiErrorHandler.createErrorResponse("User not found", 404)
+      return createErrorResponse("User not found", 404)
     }
 
     // Log successful access
@@ -103,12 +132,12 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     const clientInfo = getClientInfo(request)
 
     if (!session?.user) {
-      return ApiErrorHandler.createErrorResponse("Unauthorized", 401)
+      return createErrorResponse("Unauthorized", 401)
     }
 
     // Validate ObjectId format
     if (!SecurityUtils.isValidObjectId(params.id)) {
-      return ApiErrorHandler.createErrorResponse("Invalid user ID format", 400)
+      return createErrorResponse("Invalid user ID format", 400)
     }
 
     // Check permissions
@@ -124,7 +153,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
         success: false,
         errorMessage: "Insufficient permissions to update user",
       })
-      return ApiErrorHandler.createErrorResponse("Insufficient permissions", 403)
+      return createErrorResponse("Insufficient permissions", 403)
     }
 
     const body = await request.json()
@@ -165,7 +194,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
         success: false,
         errorMessage: "User not found",
       })
-      return ApiErrorHandler.createErrorResponse("User not found", 404)
+      return createErrorResponse("User not found", 404)
     }
 
     const updateData = validatedFields.data
@@ -188,7 +217,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
           success: false,
           errorMessage: "Cannot update user role",
         })
-        return ApiErrorHandler.createErrorResponse("Cannot assign this role", 403)
+        return createErrorResponse("Cannot assign this role", 403)
       }
     }
 
@@ -212,7 +241,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
           success: false,
           errorMessage: "Email already exists",
         })
-        return ApiErrorHandler.createErrorResponse("Email already exists", 409)
+        return createErrorResponse("Email already exists", 409)
       }
     }
 
@@ -246,7 +275,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     ).select("-password")
 
     if (!updatedUser) {
-      return ApiErrorHandler.createErrorResponse("Failed to update user", 500)
+      return createErrorResponse("Failed to update user", 500)
     }
 
     // Log successful update
@@ -294,12 +323,12 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
     const clientInfo = getClientInfo(request)
 
     if (!session?.user) {
-      return ApiErrorHandler.createErrorResponse("Unauthorized", 401)
+      return createErrorResponse("Unauthorized", 401)
     }
 
     // Validate ObjectId format
     if (!SecurityUtils.isValidObjectId(params.id)) {
-      return ApiErrorHandler.createErrorResponse("Invalid user ID format", 400)
+      return createErrorResponse("Invalid user ID format", 400)
     }
 
     // Check permissions
@@ -315,7 +344,7 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
         success: false,
         errorMessage: "Insufficient permissions to delete user",
       })
-      return ApiErrorHandler.createErrorResponse("Insufficient permissions", 403)
+      return createErrorResponse("Insufficient permissions", 403)
     }
 
     await connectDB()
@@ -334,7 +363,7 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
         success: false,
         errorMessage: "User not found",
       })
-      return ApiErrorHandler.createErrorResponse("User not found", 404)
+      return createErrorResponse("User not found", 404)
     }
 
     // Store user data for audit log before deletion

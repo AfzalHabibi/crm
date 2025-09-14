@@ -34,6 +34,9 @@ import {
   Plus,
   Eye,
   Edit,
+  Shield,
+  Lock,
+  Activity,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -274,6 +277,29 @@ const menuItems: MenuSection[] = [
             title: "Proposal Templates",
             href: "/proposals/templates",
             icon: FileCheck,
+          },
+        ],
+      },
+    ],
+  },
+  {
+    title: "SECURITY",
+    items: [
+      {
+        title: "Security Overview",
+        href: "/security",
+        icon: Shield,
+        badge: null,
+        subItems: [
+          {
+            title: "Security Headers",
+            href: "/security/headers",
+            icon: Lock,
+          },
+          {
+            title: "Rate Limiting",
+            href: "/security/rate-limiting",
+            icon: Activity,
           },
         ],
       },

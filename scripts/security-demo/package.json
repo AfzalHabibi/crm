@@ -1,0 +1,37 @@
+{
+  "name": "crm-security-demo",
+  "version": "1.0.0",
+  "description": "CRM Security Testing and Demonstration Suite",
+  "main": "security-test-suite.js",
+  "scripts": {
+    "demo": "node security-test-suite.js",
+    "rate-limit": "node rate-limit-demo.js",
+    "validation": "node validation-demo.js",
+    "headers": "node headers-demo.js",
+    "install-deps": "npm install axios colors"
+  },
+  "dependencies": {
+    "@radix-ui/react-progress": "^1.1.7",
+    "@radix-ui/react-tabs": "^1.1.13",
+    "axios": "^1.6.0",
+    "colors": "^1.4.0"
+  },
+  "keywords": [
+    "security",
+    "testing",
+    "crm",
+    "demonstration",
+    "validation",
+    "rate-limiting",
+    "headers"
+  ],
+  "author": "CRM Security Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "."
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}
