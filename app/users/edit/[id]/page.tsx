@@ -223,7 +223,6 @@ export default function EditUserPage() {
       label: "Department",
       type: "select" as const,
       options: [
-        { value: "", label: "Select Department" },
         { value: "Engineering", label: "Engineering" },
         { value: "Sales", label: "Sales" },
         { value: "Marketing", label: "Marketing" },

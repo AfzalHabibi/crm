@@ -23,7 +23,7 @@ const updateUserSchema = z.object({
 // GET /api/users/[id] - Get single user by ID
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const rateLimitResponse = await applyRateLimit(request, "api")
@@ -36,19 +36,21 @@ export async function GET(
       return createErrorResponse("Unauthorized", 401)
     }
 
+    const { id } = await params
+
     // Validate Object ID
-    if (!SecurityUtils.isValidObjectId(params.id)) {
+    if (!SecurityUtils.isValidObjectId(id)) {
       return createErrorResponse("Invalid user ID format", 400)
     }
 
     // Check permissions
-    if (!PermissionManager.canAccessUser(session, params.id)) {
+    if (!PermissionManager.canAccessUser(session, id)) {
       return createErrorResponse("Forbidden", 403)
     }
 
     await connectDB()
 
-    const user = await User.findById(params.id).select("-password").lean()
+    const user = await User.findById(id).select("-password").lean()
 
     if (!user) {
       return createErrorResponse("User not found", 404)
@@ -61,7 +63,7 @@ export async function GET(
       userEmail: undefined,
       action: "GET_USER",
       resource: "USER",
-      resourceId: params.id,
+      resourceId: id,
       ipAddress: getClientInfo(request).ipAddress,
       userAgent: getClientInfo(request).userAgent,
     })
@@ -71,7 +73,7 @@ export async function GET(
 // PUT /api/users/[id] - Update user
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const rateLimitResponse = await applyRateLimit(request, "sensitive")
@@ -83,13 +85,15 @@ export async function PUT(
       return createErrorResponse("Unauthorized", 401)
     }
 
+    const { id } = await params
+
     // Validate Object ID
-    if (!SecurityUtils.isValidObjectId(params.id)) {
+    if (!SecurityUtils.isValidObjectId(id)) {
       return createErrorResponse("Invalid user ID format", 400)
     }
 
     // Check permissions
-    if (!PermissionManager.canModifyUser(session, params.id)) {
+    if (!PermissionManager.canModifyUser(session, id)) {
       return createErrorResponse("Forbidden", 403)
     }
 
@@ -135,7 +139,7 @@ export async function PUT(
 // DELETE /api/users/[id] - Delete user
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const rateLimitResponse = await applyRateLimit(request, "sensitive")
@@ -147,20 +151,22 @@ export async function DELETE(
       return createErrorResponse("Unauthorized", 401)
     }
 
+    const { id } = await params
+
     // Validate Object ID
-    if (!SecurityUtils.isValidObjectId(params.id)) {
+    if (!SecurityUtils.isValidObjectId(id)) {
       return createErrorResponse("Invalid user ID format", 400)
     }
 
     // Check permissions
-    if (!PermissionManager.canDeleteUser(session, params.id)) {
+    if (!PermissionManager.canDeleteUser(session, id)) {
       return createErrorResponse("Forbidden", 403)
     }
 
     await connectDB()
 
     // Check if user exists
-    const existingUser = await User.findById(params.id)
+    const existingUser = await User.findById(id)
     if (!existingUser) {
       return createErrorResponse("User not found", 404)
     }
@@ -171,7 +177,7 @@ export async function DELETE(
     }
 
     // Delete user
-    await User.findByIdAndDelete(params.id)
+    await User.findByIdAndDelete(id)
 
     return ApiErrorHandler.createSuccessResponse(null, "User deleted successfully")
   } catch (error: any) {
@@ -180,7 +186,7 @@ export async function DELETE(
       userEmail: undefined,
       action: "DELETE_USER",
       resource: "USER",
-      resourceId: params.id,
+      resourceId: id,
       ipAddress: getClientInfo(request).ipAddress,
       userAgent: getClientInfo(request).userAgent,
     })
