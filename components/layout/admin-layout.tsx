@@ -6,11 +6,11 @@ import { AuthGuard } from "@/components/auth/auth-guard"
 import { Sidebar } from "@/components/layout/sidebar"
 import { Header } from "@/components/layout/header"
 
-interface DashboardLayoutProps {
+interface AdminLayoutProps {
   children: React.ReactNode
 }
 
-export function DashboardLayout({ children }: DashboardLayoutProps) {
+export function AdminLayout({ children }: AdminLayoutProps) {
   return (
     <AuthGuard>
       <div className="flex h-screen bg-background">

@@ -381,6 +381,16 @@ Our implementation includes interactive security testing pages:
 
 
 
+
+
+read these lines in the "" many things are implemented from this requirement but need 
+recheck and ensure to handle missing part of the requirements and also ensure that the use the proper error handling in the api and frontend side  and implement them in the frontend side according to api error given including the validation or db error using the try and catch
+and ensure that each and every things should be working well and there is even a type error 
+
+again i tell you in the "" there are my requirement for generic crud and for user now and most of things are implemented right now and need some improvement and handle the some missing part so read it carefully 
+
+
+"
 now ensure that user crud should be follow the best and ideal and professional  flow which should be easy to under stand and so that i can follow it to create other crud easily and ensure that the code should be ideal and professiol and cover all important senerios like pagination,search and security related things and roles and permissions which can be easy handled or update for both api side and frontend side 
 and use the current theme colors only 
 use the table for showing the list, 
@@ -410,21 +420,4 @@ and ensure that code donot too much complex and donot duplicated like if user in
  and at the end create the md file for explaining to implement the complete crud in the generic way 
 
  now my focus only on the User crud and than i should follow the same crud flow
-
-
-
-
-
-
-
- now also ensure that not use the file name like route-new or route_new instead use the generic names and also mention in the GENERIC-CRUD-GUIDE.md about the professional naming conventions for examples for files ,for model, for component, db name , schema fields   .... for complete CRUD which should be used acrsoss the app for better understanding 
-
-
-
- also ensure to resolve these kind of errors 
-
-Module '"@/components/ui/data-table"' has no exported member 'DataTable'. Did you mean to use 'import DataTable from "@/components/ui/data-table"' instead?
-
-
-
-Module '"@/components/ui/custom-modal"' has no exported member 'CustomModalComponent'. Did you mean to use 'import CustomModalComponent from "@/components/ui/custom-modal"' instead?ts(2614)
+"
