@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useDispatch, useSelector } from "react-redux";
 import { useToast } from "@/hooks/use-toast";
-import { DashboardLayout } from "@/components/layout/dashboard-layout";
+import { AdminLayout } from "@/components/layout/admin-layout";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -261,7 +261,7 @@ export default function UsersPage() {
 
   if (loading && users.length === 0) {
     return (
-      <DashboardLayout>
+      <AdminLayout>
         <div className="space-y-6">
           <PageHeader 
             title="User Management"
@@ -272,12 +272,12 @@ export default function UsersPage() {
           />
           <TableLoader />
         </div>
-      </DashboardLayout>
+      </AdminLayout>
     );
   }
 
   return (
-    <DashboardLayout>
+    <AdminLayout>
       <div className="space-y-6">
         {/* Page Header */}
         <PageHeader
@@ -624,6 +624,6 @@ export default function UsersPage() {
           )}
         </CustomModal>
       </div>
-    </DashboardLayout>
+    </AdminLayout>
   );
 }

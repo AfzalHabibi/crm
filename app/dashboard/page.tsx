@@ -4,7 +4,7 @@ import { useSession } from "next-auth/react"
 import { Users, Building2, Target, TrendingUp } from "lucide-react"
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { AdminLayout } from "@/components/layout/dashboard-layout"
+import { AdminLayout } from "@/components/layout/admin-layout"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 
 export default function DashboardPage() {
