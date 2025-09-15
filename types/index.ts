@@ -3,10 +3,46 @@ export interface User {
   name: string
   email: string
   password?: string
-  role: "admin" | "user" | "manager"
+  role: "admin" | "user" | "manager" | "hr" | "finance" | "sales"
   avatar?: string
   phone?: string
   department?: string
+  position?: string
+  status: "active" | "inactive" | "suspended"
+  permissions: string[]
+  lastLogin?: Date
+  emailVerified: boolean
+  phoneVerified: boolean
+  twoFactorEnabled: boolean
+  passwordChangedAt?: Date
+  address?: {
+    street?: string
+    city?: string
+    state?: string
+    country?: string
+    zipCode?: string
+  }
+  socialLinks?: {
+    linkedin?: string
+    twitter?: string
+    github?: string
+  }
+  preferences?: {
+    theme: "light" | "dark" | "system"
+    language: string
+    timezone: string
+    notifications: {
+      email: boolean
+      push: boolean
+      sms: boolean
+    }
+  }
+  metadata?: {
+    createdBy?: string
+    updatedBy?: string
+    notes?: string
+    tags?: string[]
+  }
   isActive: boolean
   createdAt?: Date
   updatedAt?: Date

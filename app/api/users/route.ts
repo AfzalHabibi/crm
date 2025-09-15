@@ -12,45 +12,56 @@ import { ApiErrorHandler, getClientInfo, createErrorResponse } from "@/lib/secur
 import { PermissionManager } from "@/lib/security/permissions"
 import { AuditLogger } from "@/lib/security/audit-logger"
 import { SecurityUtils } from "@/lib/security/validation"
+import { z } from "zod"
 
 const securityMiddleware = createSecurityMiddleware()
 
-// GET /api/users - Get all users with pagination and search
+// Enhanced validation schemas
+const createUserSchema = z.object({
+  name: z.string().min(2, "Name must be at least 2 characters").max(100, "Name must be less than 100 characters"),
+  email: z.string().email("Invalid email address"),
+  password: z.string().min(8, "Password must be at least 8 characters"),
+  role: z.enum(["admin", "user", "manager", "hr", "finance", "sales"]),
+  phone: z.string().optional(),
+  department: z.string().optional(),
+  position: z.string().optional(),
+  status: z.enum(["active", "inactive", "suspended"]).default("active"),
+  address: z.object({
+    street: z.string().optional(),
+    city: z.string().optional(),
+    state: z.string().optional(),
+    country: z.string().optional(),
+    zipCode: z.string().optional(),
+  }).optional(),
+  metadata: z.object({
+    notes: z.string().optional(),
+    tags: z.array(z.string()).optional(),
+  }).optional(),
+})
+
+const querySchema = z.object({
+  page: z.string().transform(val => Math.max(1, parseInt(val) || 1)),
+  limit: z.string().transform(val => Math.min(100, Math.max(1, parseInt(val) || 10))),
+  search: z.string().optional(),
+  role: z.string().optional(),
+  status: z.enum(["active", "inactive", "suspended"]).optional(),
+  department: z.string().optional(),
+  sortBy: z.string().default("createdAt"),
+  sortOrder: z.enum(["asc", "desc"]).default("desc"),
+})
+
+// GET /api/users - Get all users with advanced filtering, pagination, and search
 export async function GET(request: NextRequest) {
   try {
     // Apply rate limiting
     const rateLimitResponse = await applyRateLimit(request, "api")
     if (rateLimitResponse) return rateLimitResponse
 
-    // Backup rate limiting
-    const expressRateLimitResponse = applyExpressRateLimit(request, "api")
-    if (expressRateLimitResponse) return expressRateLimitResponse
-
     const session = await getServerSession(authOptions)
     const clientInfo = getClientInfo(request)
 
-    // Security checks
-    const maliciousCheck = securityMiddleware.detectMaliciousPatterns(request)
-    if (maliciousCheck.isMalicious) {
-      logSecurityEvent(SecurityEventType.MALICIOUS_REQUEST, {
-        ip: clientInfo.ipAddress,
-        userAgent: clientInfo.userAgent,
-        url: request.url,
-        userId: session?.user?.id,
-        severity: 'high',
-        message: `Malicious request detected: ${maliciousCheck.reason}`,
-      })
-      return createErrorResponse("Request blocked for security reasons", 403)
-    }
-
     if (!session) {
       return createErrorResponse("Unauthorized", 401)
-    }
-
-    // Express validator for query parameters
-    const searchValidation = await runValidation(request, userValidation.search)
-    if (!searchValidation.isValid) {
-      return searchValidation.response!
     }
 
     // Check permissions
@@ -63,40 +74,47 @@ export async function GET(request: NextRequest) {
         ipAddress: clientInfo.ipAddress,
         userAgent: clientInfo.userAgent,
         success: false,
-        errorMessage: "Insufficient permissions to view all users",
+        errorMessage: "Insufficient permissions to view users",
       })
       return createErrorResponse("Insufficient permissions", 403)
     }
 
+    // Parse and validate query parameters
     const { searchParams } = new URL(request.url)
-    const page = Math.max(1, Number.parseInt(searchParams.get("page") || "1"))
-    const limit = Math.min(100, Math.max(1, Number.parseInt(searchParams.get("limit") || "10")))
-    const search = SecurityUtils.sanitizeString(searchParams.get("search") || "")
-    const sortBy = SecurityUtils.sanitizeString(searchParams.get("sortBy") || "createdAt")
-    const sortOrder = searchParams.get("sortOrder") === "asc" ? "asc" : "desc"
+    const queryParams = Object.fromEntries(searchParams.entries())
+    
+    const validation = querySchema.safeParse(queryParams)
+    if (!validation.success) {
+      return createErrorResponse("Invalid query parameters", 400, validation.error.errors)
+    }
+
+    const { page, limit, search, role, status, department, sortBy, sortOrder } = validation.data
 
     await connectDB()
 
-    // Build search query with security validation
-    let searchQuery = {}
+    // Build search query
+    let searchQuery: any = {}
+    
     if (search) {
-      // Validate search term for security
-      const searchValidation = SecurityUtils.validateInput(search, "string")
-      if (!searchValidation.isValid) {
-        return createErrorResponse("Invalid search term", 400)
-      }
-
-      searchQuery = {
-        $or: [
-          { name: { $regex: search, $options: "i" } },
-          { email: { $regex: search, $options: "i" } },
-          { department: { $regex: search, $options: "i" } },
-        ],
-      }
+      const sanitizedSearch = SecurityUtils.sanitizeString(search)
+      searchQuery.$or = [
+        { name: { $regex: sanitizedSearch, $options: "i" } },
+        { email: { $regex: sanitizedSearch, $options: "i" } },
+        { department: { $regex: sanitizedSearch, $options: "i" } },
+        { position: { $regex: sanitizedSearch, $options: "i" } },
+      ]
     }
 
-    // Validate sort field to prevent NoSQL injection
-    const allowedSortFields = ["name", "email", "role", "department", "createdAt", "updatedAt", "isActive"]
+    // Add filters
+    if (role) searchQuery.role = role
+    if (status) searchQuery.status = status
+    if (department) searchQuery.department = department
+
+    // Validate sort field
+    const allowedSortFields = [
+      "name", "email", "role", "department", "position", 
+      "status", "createdAt", "updatedAt", "lastLogin"
+    ]
     const safeSortBy = allowedSortFields.includes(sortBy) ? sortBy : "createdAt"
 
     // Calculate pagination
@@ -104,18 +122,50 @@ export async function GET(request: NextRequest) {
     const sortOptions: any = {}
     sortOptions[safeSortBy] = sortOrder === "asc" ? 1 : -1
 
-    // Get users and total count
-    const [users, total] = await Promise.all([
-      User.find(searchQuery)
-        .sort(sortOptions)
-        .skip(skip)
-        .limit(limit)
-        .select("-password") // Explicitly exclude password
-        .lean(),
-      User.countDocuments(searchQuery),
-    ])
+    // Execute query with aggregation for better performance
+    const aggregationPipeline = [
+      { $match: searchQuery },
+      {
+        $project: {
+          password: 0,
+          resetPasswordToken: 0,
+          resetPasswordExpire: 0,
+        }
+      },
+      { $sort: sortOptions },
+      {
+        $facet: {
+          users: [
+            { $skip: skip },
+            { $limit: limit }
+          ],
+          totalCount: [
+            { $count: "count" }
+          ]
+        }
+      }
+    ]
 
+    const [result] = await User.aggregate(aggregationPipeline)
+    const users = result.users
+    const total = result.totalCount[0]?.count || 0
     const pages = Math.ceil(total / limit)
+
+    // Get statistics for dashboard
+    const stats = await User.aggregate([
+      {
+        $group: {
+          _id: null,
+          totalUsers: { $sum: 1 },
+          activeUsers: { $sum: { $cond: [{ $eq: ["$status", "active"] }, 1, 0] } },
+          inactiveUsers: { $sum: { $cond: [{ $eq: ["$status", "inactive"] }, 1, 0] } },
+          suspendedUsers: { $sum: { $cond: [{ $eq: ["$status", "suspended"] }, 1, 0] } },
+          roleDistribution: {
+            $push: "$role"
+          }
+        }
+      }
+    ])
 
     // Log successful access
     await AuditLogger.log({
@@ -123,22 +173,24 @@ export async function GET(request: NextRequest) {
       userEmail: session.user.email,
       action: "GET_USERS",
       resource: "USER",
-      details: {
-        page,
-        limit,
-        search,
-        total,
-      },
+      details: { page, limit, search, total, filters: { role, status, department } },
       ipAddress: clientInfo.ipAddress,
       userAgent: clientInfo.userAgent,
       success: true,
     })
 
-    const response = ApiErrorHandler.createPaginatedResponse(users, {
-      page,
-      limit,
-      total,
-      pages,
+    const response = NextResponse.json({
+      success: true,
+      users,
+      pagination: { page, limit, total, pages },
+      stats: stats[0] || {
+        totalUsers: 0,
+        activeUsers: 0,
+        inactiveUsers: 0,
+        suspendedUsers: 0,
+        roleDistribution: []
+      },
+      message: "Users retrieved successfully"
     })
 
     return applySecurityHeaders(response)
@@ -146,46 +198,26 @@ export async function GET(request: NextRequest) {
     const session = await getServerSession(authOptions)
     const clientInfo = getClientInfo(request)
 
-    return securityMiddleware.secure(request, async () =>
-      ApiErrorHandler.handleError(error, {
-        userId: session?.user?.id,
-        userEmail: session?.user?.email,
-        action: "GET_USERS",
-        resource: "USER",
-        ipAddress: clientInfo.ipAddress,
-        userAgent: clientInfo.userAgent,
-      })
-    )
+    return ApiErrorHandler.handleError(error, {
+      userId: session?.user?.id,
+      userEmail: session?.user?.email,
+      action: "GET_USERS",
+      resource: "USER",
+      ipAddress: clientInfo.ipAddress,
+      userAgent: clientInfo.userAgent,
+    })
   }
 }
 
-// POST /api/users - Create new user
+// POST /api/users - Create new user with enhanced validation
 export async function POST(request: NextRequest) {
   try {
-    // Apply rate limiting for sensitive operations
+    // Apply strict rate limiting for user creation
     const rateLimitResponse = await applyRateLimit(request, "sensitive")
     if (rateLimitResponse) return rateLimitResponse
 
-    // Backup rate limiting
-    const expressRateLimitResponse = applyExpressRateLimit(request, "sensitive")
-    if (expressRateLimitResponse) return expressRateLimitResponse
-
     const session = await getServerSession(authOptions)
     const clientInfo = getClientInfo(request)
-
-    // Security checks
-    const maliciousCheck = securityMiddleware.detectMaliciousPatterns(request)
-    if (maliciousCheck.isMalicious) {
-      logSecurityEvent(SecurityEventType.MALICIOUS_REQUEST, {
-        ip: clientInfo.ipAddress,
-        userAgent: clientInfo.userAgent,
-        url: request.url,
-        userId: session?.user?.id,
-        severity: 'critical',
-        message: `Malicious user creation attempt: ${maliciousCheck.reason}`,
-      })
-      return createErrorResponse("Request blocked for security reasons", 403)
-    }
 
     if (!session) {
       return createErrorResponse("Unauthorized", 401)
@@ -206,53 +238,35 @@ export async function POST(request: NextRequest) {
       return createErrorResponse("Insufficient permissions", 403)
     }
 
-    // Express validator integration
-    const validationResult = await runValidation(request, userValidation.create)
-    if (!validationResult.isValid) {
-      await AuditLogger.log({
-        userId: session.user.id,
-        userEmail: session.user.email,
-        action: "CREATE_USER_EXPRESS_VALIDATION_ERROR",
-        resource: "USER",
-        details: { errors: validationResult.errors },
-        ipAddress: clientInfo.ipAddress,
-        userAgent: clientInfo.userAgent,
-        success: false,
-        errorMessage: "Express validation failed",
-      })
-      return validationResult.response!
-    }
-
     const body = await request.json()
 
-    // Validate input with enhanced security
-    const validatedFields = secureRegisterSchema.safeParse(body)
-
-    if (!validatedFields.success) {
+    // Validate input
+    const validation = createUserSchema.safeParse(body)
+    if (!validation.success) {
       await AuditLogger.log({
         userId: session.user.id,
         userEmail: session.user.email,
         action: "CREATE_USER_VALIDATION_ERROR",
         resource: "USER",
-        details: { errors: validatedFields.error.errors },
+        details: { errors: validation.error.errors },
         ipAddress: clientInfo.ipAddress,
         userAgent: clientInfo.userAgent,
         success: false,
         errorMessage: "Validation failed",
       })
-      return ApiErrorHandler.handleError(validatedFields.error)
+      return createErrorResponse("Validation failed", 400, validation.error.errors)
     }
 
-    const { name, email, password, role, phone, department } = validatedFields.data
+    const userData = validation.data
 
     // Check if current user can assign this role
-    if (!PermissionManager.canAssignRole(session.user.role, role)) {
+    if (!PermissionManager.canAssignRole(session.user.role, userData.role)) {
       await AuditLogger.log({
         userId: session.user.id,
         userEmail: session.user.email,
         action: "CREATE_USER_ROLE_ERROR",
         resource: "USER",
-        details: { attemptedRole: role },
+        details: { attemptedRole: userData.role },
         ipAddress: clientInfo.ipAddress,
         userAgent: clientInfo.userAgent,
         success: false,
@@ -261,13 +275,12 @@ export async function POST(request: NextRequest) {
       return createErrorResponse("Cannot assign this role", 403)
     }
 
-    // Additional password strength validation
-    const passwordCheck = SecurityUtils.checkPasswordStrength(password)
+    // Validate password strength
+    const passwordCheck = SecurityUtils.checkPasswordStrength(userData.password)
     if (!passwordCheck.isStrong) {
       return createErrorResponse(
-        "Password is too weak",
+        "Password does not meet security requirements",
         400,
-        undefined,
         { feedback: passwordCheck.feedback }
       )
     }
@@ -275,7 +288,9 @@ export async function POST(request: NextRequest) {
     await connectDB()
 
     // Check if user already exists
-    const existingUser = await User.findOne({ email: email.toLowerCase() })
+    const existingUser = await User.findOne({ 
+      email: userData.email.toLowerCase() 
+    })
 
     if (existingUser) {
       await AuditLogger.log({
@@ -283,7 +298,7 @@ export async function POST(request: NextRequest) {
         userEmail: session.user.email,
         action: "CREATE_USER_DUPLICATE",
         resource: "USER",
-        details: { attemptedEmail: email },
+        details: { attemptedEmail: userData.email },
         ipAddress: clientInfo.ipAddress,
         userAgent: clientInfo.userAgent,
         success: false,
@@ -292,17 +307,35 @@ export async function POST(request: NextRequest) {
       return createErrorResponse("User with this email already exists", 409)
     }
 
-    // Create new user with sanitized data
-    const userData = {
-      name: SecurityUtils.sanitizeString(name),
-      email: email.toLowerCase(),
-      password,
-      role,
-      phone: phone ? SecurityUtils.sanitizeString(phone) : undefined,
-      department: department ? SecurityUtils.sanitizeString(department) : undefined,
+    // Set default permissions based on role
+    const permissions = User.getRolePermissions(userData.role)
+
+    // Create user with enhanced data
+    const newUserData = {
+      ...userData,
+      email: userData.email.toLowerCase(),
+      permissions,
+      emailVerified: false,
+      phoneVerified: false,
+      twoFactorEnabled: false,
+      preferences: {
+        theme: "system",
+        language: "en",
+        timezone: "UTC",
+        notifications: {
+          email: true,
+          push: true,
+          sms: false,
+        },
+      },
+      metadata: {
+        createdBy: session.user.id,
+        notes: userData.metadata?.notes || "",
+        tags: userData.metadata?.tags || [],
+      },
     }
 
-    const user = await User.create(userData)
+    const user = await User.create(newUserData)
 
     // Log successful user creation
     await AuditLogger.logUserCreation({
@@ -315,37 +348,24 @@ export async function POST(request: NextRequest) {
       success: true,
     })
 
-    const response = ApiErrorHandler.createSuccessResponse(
-      user.toJSON(),
-      "User created successfully",
-      201
-    )
+    const response = NextResponse.json({
+      success: true,
+      user: user.toJSON(),
+      message: "User created successfully"
+    }, { status: 201 })
 
     return applySecurityHeaders(response)
   } catch (error: any) {
     const session = await getServerSession(authOptions)
     const clientInfo = getClientInfo(request)
 
-    // Log security event for user creation errors
-    logSecurityEvent(SecurityEventType.DATA_BREACH_ATTEMPT, {
-      ip: clientInfo.ipAddress,
-      userAgent: clientInfo.userAgent,
-      url: request.url,
+    return ApiErrorHandler.handleError(error, {
       userId: session?.user?.id,
-      severity: 'high',
-      message: `User creation error: ${error.message}`,
-      additionalData: { errorType: error.name }
+      userEmail: session?.user?.email,
+      action: "CREATE_USER",
+      resource: "USER",
+      ipAddress: clientInfo.ipAddress,
+      userAgent: clientInfo.userAgent,
     })
-
-    return securityMiddleware.secure(request, async () =>
-      ApiErrorHandler.handleError(error, {
-        userId: session?.user?.id,
-        userEmail: session?.user?.email,
-        action: "CREATE_USER",
-        resource: "USER",
-        ipAddress: clientInfo.ipAddress,
-        userAgent: clientInfo.userAgent,
-      })
-    )
   }
 }

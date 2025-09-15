@@ -378,3 +378,43 @@ Our implementation includes interactive security testing pages:
 **Next Review**: December 14, 2025  
 **Maintained by**: Security Team  
 **Classification**: Internal Use
+
+
+
+now ensure that user crud should be follow the best and ideal and professional  flow which should be easy to under stand and so that i can follow it to create other crud easily and ensure that the code should be ideal and professiol and cover all important senerios like pagination,search and security related things and roles and permissions which can be easy handled or update for both api side and frontend side 
+and use the current theme colors only 
+use the table for showing the list, 
+there should be filters to seach pagination should be in the backend side
+ use the sort for each field except one so i we not implement it we can, 
+
+ use the same form for edit and add case and ensure that not use the modal for create or edit mode 
+ use the modal for quick detail
+ in the list there is toggle button for showing list and grid view as well 
+ alway use the three vertical dots for action buttons 
+ create the separate CustomModal which should use across the app where its need 
+
+ table view should be consistent and also for the input fields also we can use both the select simple and advance 
+ the CustomModal should be like given file for the CustomModal but should be in next.js and follow our color scheme 
+
+ use the consistent buttons
+ create the generic page-header for like 
+ in the given image which can be used in each page for page header 
+
+ ensure to create the generic code which can be used in any page easily making this app consistent 
+
+ ensure that code should be optimized and working well and each component should follow the current color scheme for both the dark and light theme and the flow should be ideal, profesional and easy to use across the app use the best practices of next js 
+and also ensure to use the redux also 
+you should reimplement complete crud , api ,ui , frontent and db schema also 
+and also use the one professional and nice looking loader across the website not more than one and it also should be generic 
+and ensure that code donot too much complex and donot duplicated like if user interface created once than use it rather to create again 
+ and at the end create the md file for explaining to implement the complete crud in the generic way 
+
+ now my focus only on the User crud and than i should follow the same crud flow
+
+
+
+
+
+
+
+ now also ensure that not use the file name like route-new or route_new instead use the generic names and also mention in the GENERIC-CRUD-GUIDE.md about the professional naming conventions for examples for files ,for model, for component, db name , schema fields   .... for complete CRUD which should be used acrsoss the app for better understanding 
