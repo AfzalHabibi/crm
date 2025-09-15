@@ -418,3 +418,13 @@ and ensure that code donot too much complex and donot duplicated like if user in
 
 
  now also ensure that not use the file name like route-new or route_new instead use the generic names and also mention in the GENERIC-CRUD-GUIDE.md about the professional naming conventions for examples for files ,for model, for component, db name , schema fields   .... for complete CRUD which should be used acrsoss the app for better understanding 
+
+
+
+ also ensure to resolve these kind of errors 
+
+Module '"@/components/ui/data-table"' has no exported member 'DataTable'. Did you mean to use 'import DataTable from "@/components/ui/data-table"' instead?
+
+
+
+Module '"@/components/ui/custom-modal"' has no exported member 'CustomModalComponent'. Did you mean to use 'import CustomModalComponent from "@/components/ui/custom-modal"' instead?ts(2614)

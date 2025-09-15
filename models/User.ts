@@ -297,4 +297,9 @@ UserSchema.statics.getRolePermissions = function(role: string): string[] {
   return rolePermissions[role] || rolePermissions.user;
 }
 
-export default mongoose.models.User || mongoose.model<IUser>("User", UserSchema)
+// Interface for static methods
+interface IUserModel extends mongoose.Model<IUser> {
+  getRolePermissions(role: string): string[];
+}
+
+export default mongoose.models.User as IUserModel || mongoose.model<IUser, IUserModel>("User", UserSchema)

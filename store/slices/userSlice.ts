@@ -27,7 +27,7 @@ export interface CreateUserData {
   role: string;
   department?: string;
   phone?: string;
-  status?: 'active' | 'inactive';
+  status?: 'active' | 'inactive' | 'suspended';
 }
 
 export interface UpdateUserData extends Partial<CreateUserData> {
@@ -48,6 +48,12 @@ interface UserState {
     total: number
     pages: number
   }
+  stats: {
+    totalUsers: number
+    activeUsers: number
+    inactiveUsers: number
+    suspendedUsers: number
+  } | null
 }
 
 const initialState: UserState = {
@@ -67,6 +73,7 @@ const initialState: UserState = {
     total: 0,
     pages: 0,
   },
+  stats: null,
 }
 
 // Async Thunks

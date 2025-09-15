@@ -51,7 +51,82 @@ Enhanced User Model
 └── Audit Fields: createdAt, updatedAt, lastLogin
 ```
 
-## 🔧 Implementation Steps
+## � Professional Naming Conventions
+
+### File Naming
+✅ **Correct:**
+- `route.ts` (API routes)
+- `page.tsx` (Next.js pages)
+- `layout.tsx` (Layout components)
+- `loading.tsx` (Loading UI)
+- `error.tsx` (Error boundaries)
+- `not-found.tsx` (404 pages)
+
+❌ **Avoid:**
+- `route-new.ts`, `route_new.ts` (non-standard suffixes)
+- `pageComponent.tsx` (use `page.tsx`)
+- `routeHandler.ts` (use `route.ts`)
+
+### Component Naming
+✅ **Correct:**
+- `UserForm.tsx` (PascalCase for components)
+- `user-table.tsx` (kebab-case for files)
+- `PageHeader.tsx` (descriptive names)
+- `CustomModal.tsx` (generic components)
+
+❌ **Avoid:**
+- `userform.tsx` (missing separation)
+- `User_Form.tsx` (underscore in components)
+- `usertable.tsx` (unclear naming)
+
+### Database & Model Naming
+✅ **Correct:**
+- Model: `User.ts` (PascalCase, singular)
+- Collection: `users` (lowercase, plural)
+- Fields: `firstName`, `lastName` (camelCase)
+- References: `userId`, `createdBy` (descriptive)
+
+❌ **Avoid:**
+- `user.ts` (lowercase model)
+- `Users.ts` (plural model)
+- `first_name` (snake_case in JS)
+
+### API Route Naming
+✅ **Correct:**
+- `/api/users` (GET, POST)
+- `/api/users/[id]` (GET, PUT, DELETE)
+- `/api/users/[id]/avatar` (specific actions)
+
+❌ **Avoid:**
+- `/api/user` (singular for collection)
+- `/api/users/new` (use POST to /api/users)
+- `/api/getUserById` (RPC style)
+
+### Variable & Function Naming
+✅ **Correct:**
+- `fetchUsers()` (verb + noun)
+- `handleSubmit()` (handle + action)
+- `isUserAdmin()` (boolean prefix)
+- `userPermissions` (descriptive)
+
+❌ **Avoid:**
+- `users()` (unclear action)
+- `submit()` (too generic)
+- `adminCheck()` (unclear return type)
+
+### Redux Naming
+✅ **Correct:**
+- Slice: `userSlice.ts`
+- Actions: `fetchUsers`, `createUser`, `updateUser`
+- State: `users`, `loading`, `error`, `pagination`
+- Thunks: `fetchUsers.pending`, `fetchUsers.fulfilled`
+
+❌ **Avoid:**
+- `usersSlice.ts` (plural slice name)
+- `getUsers` (use `fetchUsers`)
+- `userList` (use `users`)
+
+## �🔧 Implementation Steps
 
 ### 1. Setup Generic Components
 

@@ -4,7 +4,6 @@ import connectDB from "@/lib/mongodb"
 import User from "@/models/User"
 import { authOptions } from "@/lib/auth-config"
 import { applyRateLimit } from "@/lib/security/rate-limiter"
-import { applySecurityHeaders } from "@/lib/security/helmet-adapter"
 import { ApiErrorHandler, getClientInfo, createErrorResponse } from "@/lib/security/error-handler"
 import { PermissionManager } from "@/lib/security/permissions"
 import { AuditLogger } from "@/lib/security/audit-logger"
@@ -19,32 +18,6 @@ const updateUserSchema = z.object({
   department: z.string().optional(),
   position: z.string().optional(),
   status: z.enum(["active", "inactive", "suspended"]).optional(),
-  address: z.object({
-    street: z.string().optional(),
-    city: z.string().optional(),
-    state: z.string().optional(),
-    country: z.string().optional(),
-    zipCode: z.string().optional(),
-  }).optional(),
-  socialLinks: z.object({
-    linkedin: z.string().url().optional(),
-    twitter: z.string().url().optional(),
-    github: z.string().url().optional(),
-  }).optional(),
-  preferences: z.object({
-    theme: z.enum(["light", "dark", "system"]).optional(),
-    language: z.string().optional(),
-    timezone: z.string().optional(),
-    notifications: z.object({
-      email: z.boolean().optional(),
-      push: z.boolean().optional(),
-      sms: z.boolean().optional(),
-    }).optional(),
-  }).optional(),
-  metadata: z.object({
-    notes: z.string().optional(),
-    tags: z.array(z.string()).optional(),
-  }).optional(),
 })
 
 // GET /api/users/[id] - Get single user by ID
@@ -59,75 +32,38 @@ export async function GET(
     const session = await getServerSession(authOptions)
     const clientInfo = getClientInfo(request)
 
-    if (!session) {
+    if (!session?.user) {
       return createErrorResponse("Unauthorized", 401)
     }
 
-    const userId = params.id
-
-    // Validate user ID format
-    if (!userId || !userId.match(/^[0-9a-fA-F]{24}$/)) {
+    // Validate Object ID
+    if (!SecurityUtils.isValidObjectId(params.id)) {
       return createErrorResponse("Invalid user ID format", 400)
     }
 
-    // Check permissions - users can view their own profile, others need permission
-    const canViewUser = 
-      session.user.id === userId || 
-      PermissionManager.canAccessResource(session, "user", "read")
-
-    if (!canViewUser) {
-      await AuditLogger.log({
-        userId: session.user.id,
-        userEmail: session.user.email,
-        action: "GET_USER_UNAUTHORIZED",
-        resource: "USER",
-        details: { targetUserId: userId },
-        ipAddress: clientInfo.ipAddress,
-        userAgent: clientInfo.userAgent,
-        success: false,
-        errorMessage: "Insufficient permissions",
-      })
-      return createErrorResponse("Insufficient permissions", 403)
+    // Check permissions
+    if (!PermissionManager.canAccessUser(session, params.id)) {
+      return createErrorResponse("Forbidden", 403)
     }
 
     await connectDB()
 
-    const user = await User.findById(userId).select("-password -resetPasswordToken -resetPasswordExpire")
+    const user = await User.findById(params.id).select("-password").lean()
 
     if (!user) {
       return createErrorResponse("User not found", 404)
     }
 
-    // Log successful access
-    await AuditLogger.log({
-      userId: session.user.id,
-      userEmail: session.user.email,
-      action: "GET_USER",
-      resource: "USER",
-      details: { targetUserId: userId },
-      ipAddress: clientInfo.ipAddress,
-      userAgent: clientInfo.userAgent,
-      success: true,
-    })
-
-    const response = NextResponse.json({
-      success: true,
-      user: user.toJSON(),
-      message: "User retrieved successfully"
-    })
-
-    return applySecurityHeaders(response)
+    return ApiErrorHandler.createSuccessResponse(user)
   } catch (error: any) {
-    const session = await getServerSession(authOptions)
-    const clientInfo = getClientInfo(request)
-
     return ApiErrorHandler.handleError(error, {
-      userId: session?.user?.id,
-      userEmail: session?.user?.email,
+      userId: undefined,
+      userEmail: undefined,
       action: "GET_USER",
       resource: "USER",
-      ipAddress: clientInfo.ipAddress,
-      userAgent: clientInfo.userAgent,
+      resourceId: params.id,
+      ipAddress: getClientInfo(request).ipAddress,
+      userAgent: getClientInfo(request).userAgent,
     })
   }
 }
@@ -142,151 +78,56 @@ export async function PUT(
     if (rateLimitResponse) return rateLimitResponse
 
     const session = await getServerSession(authOptions)
-    const clientInfo = getClientInfo(request)
 
-    if (!session) {
+    if (!session?.user) {
       return createErrorResponse("Unauthorized", 401)
     }
 
-    const userId = params.id
-
-    // Validate user ID format
-    if (!userId || !userId.match(/^[0-9a-fA-F]{24}$/)) {
+    // Validate Object ID
+    if (!SecurityUtils.isValidObjectId(params.id)) {
       return createErrorResponse("Invalid user ID format", 400)
     }
 
-    // Check permissions - users can update their own basic info, others need permission
-    const canUpdateUser = 
-      session.user.id === userId || 
-      PermissionManager.canAccessResource(session, "user", "update")
-
-    if (!canUpdateUser) {
-      await AuditLogger.log({
-        userId: session.user.id,
-        userEmail: session.user.email,
-        action: "UPDATE_USER_UNAUTHORIZED",
-        resource: "USER",
-        details: { targetUserId: userId },
-        ipAddress: clientInfo.ipAddress,
-        userAgent: clientInfo.userAgent,
-        success: false,
-        errorMessage: "Insufficient permissions",
-      })
-      return createErrorResponse("Insufficient permissions", 403)
+    // Check permissions
+    if (!PermissionManager.canModifyUser(session, params.id)) {
+      return createErrorResponse("Forbidden", 403)
     }
 
     const body = await request.json()
+    const validatedFields = updateUserSchema.safeParse(body)
 
-    // Validate input
-    const validation = updateUserSchema.safeParse(body)
-    if (!validation.success) {
-      return createErrorResponse("Validation failed", 400, validation.error.errors)
-    }
-
-    const updateData = validation.data
-
-    // Additional role-based validation
-    if (updateData.role && session.user.id !== userId) {
-      if (!PermissionManager.canAssignRole(session.user.role, updateData.role)) {
-        return createErrorResponse("Cannot assign this role", 403)
-      }
-    }
-
-    // Prevent users from changing their own role unless they're admin
-    if (updateData.role && session.user.id === userId && session.user.role !== "admin") {
-      return createErrorResponse("Cannot change your own role", 403)
+    if (!validatedFields.success) {
+      return createErrorResponse("Validation failed", 400)
     }
 
     await connectDB()
 
     // Check if user exists
-    const existingUser = await User.findById(userId)
+    const existingUser = await User.findById(params.id)
     if (!existingUser) {
       return createErrorResponse("User not found", 404)
     }
 
-    // Check email uniqueness if email is being updated
-    if (updateData.email && updateData.email !== existingUser.email) {
-      const emailExists = await User.findOne({ 
-        email: updateData.email.toLowerCase(),
-        _id: { $ne: userId }
-      })
-      if (emailExists) {
-        return createErrorResponse("Email already exists", 409)
-      }
-    }
-
-    // Prepare update data
-    const sanitizedUpdateData: any = {}
-    
-    if (updateData.name) sanitizedUpdateData.name = SecurityUtils.sanitizeString(updateData.name)
-    if (updateData.email) sanitizedUpdateData.email = updateData.email.toLowerCase()
-    if (updateData.role) {
-      sanitizedUpdateData.role = updateData.role
-      // Update permissions based on new role
-      sanitizedUpdateData.permissions = User.getRolePermissions(updateData.role)
-    }
-    if (updateData.phone) sanitizedUpdateData.phone = SecurityUtils.sanitizeString(updateData.phone)
-    if (updateData.department) sanitizedUpdateData.department = SecurityUtils.sanitizeString(updateData.department)
-    if (updateData.position) sanitizedUpdateData.position = SecurityUtils.sanitizeString(updateData.position)
-    if (updateData.status) sanitizedUpdateData.status = updateData.status
-    if (updateData.address) sanitizedUpdateData.address = updateData.address
-    if (updateData.socialLinks) sanitizedUpdateData.socialLinks = updateData.socialLinks
-    if (updateData.preferences) {
-      sanitizedUpdateData.preferences = {
-        ...existingUser.preferences,
-        ...updateData.preferences
-      }
-    }
-    if (updateData.metadata) {
-      sanitizedUpdateData.metadata = {
-        ...existingUser.metadata,
-        ...updateData.metadata,
-        updatedBy: session.user.id
-      }
-    }
-
     // Update user
     const updatedUser = await User.findByIdAndUpdate(
-      userId,
-      sanitizedUpdateData,
-      { new: true, runValidators: true }
-    ).select("-password -resetPasswordToken -resetPasswordExpire")
-
-    // Log successful update
-    await AuditLogger.log({
-      userId: session.user.id,
-      userEmail: session.user.email,
-      action: "UPDATE_USER",
-      resource: "USER",
-      details: { 
-        targetUserId: userId,
-        updatedFields: Object.keys(sanitizedUpdateData),
-        changes: sanitizedUpdateData
+      params.id,
+      {
+        ...validatedFields.data,
+        updatedAt: new Date(),
       },
-      ipAddress: clientInfo.ipAddress,
-      userAgent: clientInfo.userAgent,
-      success: true,
-    })
+      { new: true, runValidators: true }
+    ).select("-password")
 
-    const response = NextResponse.json({
-      success: true,
-      user: updatedUser?.toJSON(),
-      message: "User updated successfully"
-    })
-
-    return applySecurityHeaders(response)
+    return ApiErrorHandler.createSuccessResponse(updatedUser, "User updated successfully")
   } catch (error: any) {
-    const session = await getServerSession(authOptions)
-    const clientInfo = getClientInfo(request)
-
     return ApiErrorHandler.handleError(error, {
-      userId: session?.user?.id,
-      userEmail: session?.user?.email,
+      userId: undefined,
+      userEmail: undefined,
       action: "UPDATE_USER",
       resource: "USER",
-      ipAddress: clientInfo.ipAddress,
-      userAgent: clientInfo.userAgent,
+      resourceId: params.id,
+      ipAddress: getClientInfo(request).ipAddress,
+      userAgent: getClientInfo(request).userAgent,
     })
   }
 }
@@ -301,463 +142,47 @@ export async function DELETE(
     if (rateLimitResponse) return rateLimitResponse
 
     const session = await getServerSession(authOptions)
-    const clientInfo = getClientInfo(request)
-
-    if (!session) {
-      return createErrorResponse("Unauthorized", 401)
-    }
-
-    const userId = params.id
-
-    // Validate user ID format
-    if (!userId || !userId.match(/^[0-9a-fA-F]{24}$/)) {
-      return createErrorResponse("Invalid user ID format", 400)
-    }
-
-    // Check permissions - only admin or manager can delete users
-    if (!PermissionManager.canDeleteUser(session)) {
-      await AuditLogger.log({
-        userId: session.user.id,
-        userEmail: session.user.email,
-        action: "DELETE_USER_UNAUTHORIZED",
-        resource: "USER",
-        details: { targetUserId: userId },
-        ipAddress: clientInfo.ipAddress,
-        userAgent: clientInfo.userAgent,
-        success: false,
-        errorMessage: "Insufficient permissions",
-      })
-      return createErrorResponse("Insufficient permissions", 403)
-    }
-
-    // Prevent users from deleting themselves
-    if (session.user.id === userId) {
-      return createErrorResponse("Cannot delete your own account", 403)
-    }
-
-    await connectDB()
-
-    // Check if user exists
-    const existingUser = await User.findById(userId)
-    if (!existingUser) {
-      return createErrorResponse("User not found", 404)
-    }
-
-    // Prevent deleting the last admin
-    if (existingUser.role === "admin") {
-      const adminCount = await User.countDocuments({ role: "admin", _id: { $ne: userId } })
-      if (adminCount === 0) {
-        return createErrorResponse("Cannot delete the last admin user", 403)
-      }
-    }
-
-    // Soft delete by setting status to inactive and isActive to false
-    const deletedUser = await User.findByIdAndUpdate(
-      userId,
-      { 
-        status: "inactive",
-        isActive: false,
-        metadata: {
-          ...existingUser.metadata,
-          updatedBy: session.user.id,
-          deletedAt: new Date(),
-          deletedBy: session.user.id
-        }
-      },
-      { new: true }
-    ).select("-password -resetPasswordToken -resetPasswordExpire")
-
-    // Log successful deletion
-    await AuditLogger.log({
-      userId: session.user.id,
-      userEmail: session.user.email,
-      action: "DELETE_USER",
-      resource: "USER",
-      details: { 
-        targetUserId: userId,
-        targetUserEmail: existingUser.email,
-        deletionType: "soft_delete"
-      },
-      ipAddress: clientInfo.ipAddress,
-      userAgent: clientInfo.userAgent,
-      success: true,
-    })
-
-    const response = NextResponse.json({
-      success: true,
-      user: deletedUser?.toJSON(),
-      message: "User deleted successfully"
-    })
-
-    return applySecurityHeaders(response)
-  } catch (error: any) {
-    const session = await getServerSession(authOptions)
-    const clientInfo = getClientInfo(request)
-
-    return ApiErrorHandler.handleError(error, {
-      userId: session?.user?.id,
-      userEmail: session?.user?.email,
-      action: "DELETE_USER",
-      resource: "USER",
-      ipAddress: clientInfo.ipAddress,
-      userAgent: clientInfo.userAgent,
-    })
-  }
-}
-    if (!idValidation.isValid) {
-      return idValidation.response!
-    }
-
-    // Validate ObjectId format
-    if (!SecurityUtils.isValidObjectId(params.id)) {
-      return createErrorResponse("Invalid user ID format", 400)
-    }
-
-    // Check permissions
-    if (!PermissionManager.canAccessUser(session, params.id)) {
-      await AuditLogger.log({
-        userId: session.user.id,
-        userEmail: session.user.email,
-        action: "GET_USER_UNAUTHORIZED",
-        resource: "USER",
-        resourceId: params.id,
-        ipAddress: clientInfo.ipAddress,
-        userAgent: clientInfo.userAgent,
-        success: false,
-        errorMessage: "Insufficient permissions to view user",
-      })
-      return createErrorResponse("Insufficient permissions", 403)
-    }
-
-    await connectDB()
-
-    const user = await User.findById(params.id).select("-password").lean()
-
-    if (!user) {
-      await AuditLogger.log({
-        userId: session.user.id,
-        userEmail: session.user.email,
-        action: "GET_USER_NOT_FOUND",
-        resource: "USER",
-        resourceId: params.id,
-        ipAddress: clientInfo.ipAddress,
-        userAgent: clientInfo.userAgent,
-        success: false,
-        errorMessage: "User not found",
-      })
-      return createErrorResponse("User not found", 404)
-    }
-
-    // Log successful access
-    await AuditLogger.log({
-      userId: session.user.id,
-      userEmail: session.user.email,
-      action: "GET_USER",
-      resource: "USER",
-      resourceId: params.id,
-      details: { targetUserEmail: (user as any).email },
-      ipAddress: clientInfo.ipAddress,
-      userAgent: clientInfo.userAgent,
-      success: true,
-    })
-
-    return ApiErrorHandler.createSuccessResponse(user)
-  } catch (error: any) {
-    const session = await getServerSession(authOptions)
-    const clientInfo = getClientInfo(request)
-
-    return ApiErrorHandler.handleError(error, {
-      userId: session?.user?.id,
-      userEmail: session?.user?.email,
-      action: "GET_USER",
-      resource: "USER",
-      resourceId: params.id,
-      ipAddress: clientInfo.ipAddress,
-      userAgent: clientInfo.userAgent,
-    })
-  }
-}
-
-// PUT /api/users/[id] - Update user
-export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
-  try {
-    const rateLimitResponse = await applyRateLimit(request, "sensitive")
-    if (rateLimitResponse) return rateLimitResponse
-
-    const session = await getServerSession(authOptions)
-    const clientInfo = getClientInfo(request)
 
     if (!session?.user) {
       return createErrorResponse("Unauthorized", 401)
     }
 
-    // Validate ObjectId format
-    if (!SecurityUtils.isValidObjectId(params.id)) {
-      return createErrorResponse("Invalid user ID format", 400)
-    }
-
-    // Check permissions
-    if (!PermissionManager.canModifyUser(session, params.id)) {
-      await AuditLogger.log({
-        userId: session.user.id,
-        userEmail: session.user.email,
-        action: "UPDATE_USER_UNAUTHORIZED",
-        resource: "USER",
-        resourceId: params.id,
-        ipAddress: clientInfo.ipAddress,
-        userAgent: clientInfo.userAgent,
-        success: false,
-        errorMessage: "Insufficient permissions to update user",
-      })
-      return createErrorResponse("Insufficient permissions", 403)
-    }
-
-    const body = await request.json()
-
-    // Validate input
-    const validatedFields = secureUpdateUserSchema.safeParse(body)
-
-    if (!validatedFields.success) {
-      await AuditLogger.log({
-        userId: session.user.id,
-        userEmail: session.user.email,
-        action: "UPDATE_USER_VALIDATION_ERROR",
-        resource: "USER",
-        resourceId: params.id,
-        details: { errors: validatedFields.error.errors },
-        ipAddress: clientInfo.ipAddress,
-        userAgent: clientInfo.userAgent,
-        success: false,
-        errorMessage: "Validation failed",
-      })
-      return ApiErrorHandler.handleError(validatedFields.error)
-    }
-
-    await connectDB()
-
-    // Check if user exists
-    const existingUser = await User.findById(params.id)
-
-    if (!existingUser) {
-      await AuditLogger.log({
-        userId: session.user.id,
-        userEmail: session.user.email,
-        action: "UPDATE_USER_NOT_FOUND",
-        resource: "USER",
-        resourceId: params.id,
-        ipAddress: clientInfo.ipAddress,
-        userAgent: clientInfo.userAgent,
-        success: false,
-        errorMessage: "User not found",
-      })
-      return createErrorResponse("User not found", 404)
-    }
-
-    const updateData = validatedFields.data
-
-    // Additional role validation if role is being changed
-    if (updateData.role && updateData.role !== existingUser.role) {
-      if (!PermissionManager.canUpdateUserRole(session, params.id, updateData.role)) {
-        await AuditLogger.log({
-          userId: session.user.id,
-          userEmail: session.user.email,
-          action: "UPDATE_USER_ROLE_ERROR",
-          resource: "USER",
-          resourceId: params.id,
-          details: { 
-            oldRole: existingUser.role, 
-            attemptedRole: updateData.role 
-          },
-          ipAddress: clientInfo.ipAddress,
-          userAgent: clientInfo.userAgent,
-          success: false,
-          errorMessage: "Cannot update user role",
-        })
-        return createErrorResponse("Cannot assign this role", 403)
-      }
-    }
-
-    // Check for email conflicts
-    if (updateData.email && updateData.email !== existingUser.email) {
-      const emailExists = await User.findOne({ 
-        email: updateData.email.toLowerCase(),
-        _id: { $ne: params.id }
-      })
-      
-      if (emailExists) {
-        await AuditLogger.log({
-          userId: session.user.id,
-          userEmail: session.user.email,
-          action: "UPDATE_USER_EMAIL_CONFLICT",
-          resource: "USER",
-          resourceId: params.id,
-          details: { attemptedEmail: updateData.email },
-          ipAddress: clientInfo.ipAddress,
-          userAgent: clientInfo.userAgent,
-          success: false,
-          errorMessage: "Email already exists",
-        })
-        return createErrorResponse("Email already exists", 409)
-      }
-    }
-
-    // Sanitize string fields
-    const sanitizedUpdateData = {
-      ...updateData,
-      ...(updateData.name && { name: SecurityUtils.sanitizeString(updateData.name) }),
-      ...(updateData.email && { email: updateData.email.toLowerCase() }),
-      ...(updateData.phone && { phone: SecurityUtils.sanitizeString(updateData.phone) }),
-      ...(updateData.department && { department: SecurityUtils.sanitizeString(updateData.department) }),
-    }
-
-    // Store original data for audit logging
-    const originalData = {
-      name: existingUser.name,
-      email: existingUser.email,
-      role: existingUser.role,
-      phone: existingUser.phone,
-      department: existingUser.department,
-      isActive: existingUser.isActive,
-    }
-
-    // Update user
-    const updatedUser = await User.findByIdAndUpdate(
-      params.id, 
-      sanitizedUpdateData, 
-      {
-        new: true,
-        runValidators: true,
-      }
-    ).select("-password")
-
-    if (!updatedUser) {
-      return createErrorResponse("Failed to update user", 500)
-    }
-
-    // Log successful update
-    await AuditLogger.logUserUpdate({
-      adminId: session.user.id,
-      adminEmail: session.user.email,
-      targetUserId: params.id,
-      targetUserEmail: updatedUser.email,
-      changes: {
-        original: originalData,
-        updated: sanitizedUpdateData,
-      },
-      ipAddress: clientInfo.ipAddress,
-      userAgent: clientInfo.userAgent,
-      success: true,
-    })
-
-    return ApiErrorHandler.createSuccessResponse(
-      updatedUser.toJSON(),
-      "User updated successfully"
-    )
-  } catch (error: any) {
-    const session = await getServerSession(authOptions)
-    const clientInfo = getClientInfo(request)
-
-    return ApiErrorHandler.handleError(error, {
-      userId: session?.user?.id,
-      userEmail: session?.user?.email,
-      action: "UPDATE_USER",
-      resource: "USER",
-      resourceId: params.id,
-      ipAddress: clientInfo.ipAddress,
-      userAgent: clientInfo.userAgent,
-    })
-  }
-}
-
-// DELETE /api/users/[id] - Delete user
-export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
-  try {
-    const rateLimitResponse = await applyRateLimit(request, "sensitive")
-    if (rateLimitResponse) return rateLimitResponse
-
-    const session = await getServerSession(authOptions)
-    const clientInfo = getClientInfo(request)
-
-    if (!session?.user) {
-      return createErrorResponse("Unauthorized", 401)
-    }
-
-    // Validate ObjectId format
+    // Validate Object ID
     if (!SecurityUtils.isValidObjectId(params.id)) {
       return createErrorResponse("Invalid user ID format", 400)
     }
 
     // Check permissions
     if (!PermissionManager.canDeleteUser(session, params.id)) {
-      await AuditLogger.log({
-        userId: session.user.id,
-        userEmail: session.user.email,
-        action: "DELETE_USER_UNAUTHORIZED",
-        resource: "USER",
-        resourceId: params.id,
-        ipAddress: clientInfo.ipAddress,
-        userAgent: clientInfo.userAgent,
-        success: false,
-        errorMessage: "Insufficient permissions to delete user",
-      })
-      return createErrorResponse("Insufficient permissions", 403)
+      return createErrorResponse("Forbidden", 403)
     }
 
     await connectDB()
 
-    const user = await User.findById(params.id)
-
-    if (!user) {
-      await AuditLogger.log({
-        userId: session.user.id,
-        userEmail: session.user.email,
-        action: "DELETE_USER_NOT_FOUND",
-        resource: "USER",
-        resourceId: params.id,
-        ipAddress: clientInfo.ipAddress,
-        userAgent: clientInfo.userAgent,
-        success: false,
-        errorMessage: "User not found",
-      })
+    // Check if user exists
+    const existingUser = await User.findById(params.id)
+    if (!existingUser) {
       return createErrorResponse("User not found", 404)
     }
 
-    // Store user data for audit log before deletion
-    const userData = {
-      email: user.email,
-      name: user.name,
-      role: user.role,
+    // Prevent deleting admin users
+    if (existingUser.role === 'admin') {
+      return createErrorResponse("Cannot delete admin users", 403)
     }
 
+    // Delete user
     await User.findByIdAndDelete(params.id)
 
-    // Log successful deletion
-    await AuditLogger.logUserDeletion({
-      adminId: session.user.id,
-      adminEmail: session.user.email,
-      targetUserId: params.id,
-      targetUserEmail: userData.email,
-      ipAddress: clientInfo.ipAddress,
-      userAgent: clientInfo.userAgent,
-      success: true,
-    })
-
-    return ApiErrorHandler.createSuccessResponse(
-      { id: params.id },
-      "User deleted successfully"
-    )
+    return ApiErrorHandler.createSuccessResponse(null, "User deleted successfully")
   } catch (error: any) {
-    const session = await getServerSession(authOptions)
-    const clientInfo = getClientInfo(request)
-
     return ApiErrorHandler.handleError(error, {
-      userId: session?.user?.id,
-      userEmail: session?.user?.email,
+      userId: undefined,
+      userEmail: undefined,
       action: "DELETE_USER",
       resource: "USER",
       resourceId: params.id,
-      ipAddress: clientInfo.ipAddress,
-      userAgent: clientInfo.userAgent,
+      ipAddress: getClientInfo(request).ipAddress,
+      userAgent: getClientInfo(request).userAgent,
     })
   }
 }
