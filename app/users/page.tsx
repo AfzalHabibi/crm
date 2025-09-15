@@ -63,9 +63,9 @@ export default function UsersPage() {
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [filters, setFilters] = useState({
-    role: '',
-    status: '' as '' | 'active' | 'inactive',
-    department: '',
+    role: 'all',
+    status: 'all' as 'all' | 'active' | 'inactive',
+    department: 'all',
   });
   const [sortConfig, setSortConfig] = useState({
     field: 'createdAt',
@@ -78,9 +78,9 @@ export default function UsersPage() {
       search: searchTerm || undefined,
     };
     
-    if (filters.role) cleanFilters.role = filters.role;
-    if (filters.status) cleanFilters.status = filters.status as 'active' | 'inactive';
-    if (filters.department) cleanFilters.department = filters.department;
+    if (filters.role && filters.role !== 'all') cleanFilters.role = filters.role;
+    if (filters.status && filters.status !== 'all') cleanFilters.status = filters.status as 'active' | 'inactive';
+    if (filters.department && filters.department !== 'all') cleanFilters.department = filters.department;
     
     dispatch(fetchUsers({
       page: pagination.page,
@@ -321,7 +321,7 @@ export default function UsersPage() {
                 <SelectValue placeholder="All Roles" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">All Roles</SelectItem>
+                <SelectItem value="all">All Roles</SelectItem>
                 <SelectItem value="admin">Admin</SelectItem>
                 <SelectItem value="manager">Manager</SelectItem>
                 <SelectItem value="hr">HR</SelectItem>
@@ -336,7 +336,7 @@ export default function UsersPage() {
                 <SelectValue placeholder="All Status" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">All Status</SelectItem>
+                <SelectItem value="all">All Status</SelectItem>
                 <SelectItem value="active">Active</SelectItem>
                 <SelectItem value="inactive">Inactive</SelectItem>
                 <SelectItem value="suspended">Suspended</SelectItem>
@@ -348,7 +348,7 @@ export default function UsersPage() {
                 <SelectValue placeholder="All Departments" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">All Departments</SelectItem>
+                <SelectItem value="all">All Departments</SelectItem>
                 <SelectItem value="Engineering">Engineering</SelectItem>
                 <SelectItem value="Marketing">Marketing</SelectItem>
                 <SelectItem value="Sales">Sales</SelectItem>
@@ -358,11 +358,11 @@ export default function UsersPage() {
               </SelectContent>
             </Select>
 
-            {(filters.role || filters.status || filters.department) && (
+            {(filters.role !== 'all' || filters.status !== 'all' || filters.department !== 'all') && (
               <Button 
                 variant="ghost" 
                 size="sm" 
-                onClick={() => setFilters({ role: '', status: '', department: '' })}
+                onClick={() => setFilters({ role: 'all', status: 'all', department: 'all' })}
               >
                 Clear Filters
               </Button>

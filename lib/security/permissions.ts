@@ -27,6 +27,9 @@ export enum Role {
   ADMIN = "admin",
   MANAGER = "manager",
   USER = "user",
+  HR = "hr",
+  FINANCE = "finance", 
+  SALES = "sales",
 }
 
 // Role-based permissions mapping
@@ -61,8 +64,40 @@ const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     Permission.VIEW_REPORTS,
   ],
   
+  [Role.HR]: [
+    Permission.CREATE_USER,
+    Permission.READ_USER,
+    Permission.UPDATE_USER,
+    Permission.READ_ALL_USERS,
+    Permission.UPDATE_OWN_PROFILE,
+    Permission.READ_OWN_PROFILE,
+    Permission.MANAGE_COMPANIES,
+    Permission.VIEW_REPORTS,
+  ],
+
+  [Role.FINANCE]: [
+    Permission.READ_USER,
+    Permission.READ_ALL_USERS,
+    Permission.UPDATE_OWN_PROFILE,
+    Permission.READ_OWN_PROFILE,
+    Permission.MANAGE_COMPANIES,
+    Permission.VIEW_REPORTS,
+  ],
+
+  [Role.SALES]: [
+    Permission.READ_USER,
+    Permission.READ_ALL_USERS,
+    Permission.UPDATE_OWN_PROFILE,
+    Permission.READ_OWN_PROFILE,
+    Permission.MANAGE_COMPANIES,
+    Permission.MANAGE_DEALS,
+    Permission.MANAGE_LEADS,
+    Permission.VIEW_REPORTS,
+  ],
+  
   [Role.USER]: [
     Permission.READ_USER,
+    Permission.READ_ALL_USERS, // Allow users to see user list (they can only see limited info)
     Permission.UPDATE_OWN_PROFILE,
     Permission.READ_OWN_PROFILE,
   ],
@@ -144,8 +179,11 @@ export class PermissionManager {
 
   static validateRoleHierarchy(currentUserRole: string, targetRole: string): boolean {
     const roleHierarchy = {
-      [Role.ADMIN]: 3,
-      [Role.MANAGER]: 2,
+      [Role.ADMIN]: 5,
+      [Role.MANAGER]: 4,
+      [Role.HR]: 3,
+      [Role.FINANCE]: 2,
+      [Role.SALES]: 2,
       [Role.USER]: 1,
     }
 

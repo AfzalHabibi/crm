@@ -18,9 +18,9 @@ export function applySecurityHeaders(response: NextResponse): NextResponse {
   const csp = [
     "default-src 'self'",
     "script-src 'self' 'unsafe-eval' 'unsafe-inline'", // Needed for Next.js in dev
-    "style-src 'self' 'unsafe-inline'", // Needed for CSS-in-JS
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com", // Allow Google Fonts
     "img-src 'self' data: https:",
-    "font-src 'self' data:",
+    "font-src 'self' data: https://fonts.gstatic.com", // Allow Google Fonts
     "connect-src 'self'",
     "frame-src 'none'",
     "object-src 'none'",
