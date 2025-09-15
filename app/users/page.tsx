@@ -45,24 +45,9 @@ import {
   Mail,
   Phone
 } from "lucide-react";
-import { fetchUsers, deleteUser } from "@/store/slices/userSlice";
+import { fetchUsers, deleteUser, setPagination } from "@/store/slices/userSlice";
 import type { AppDispatch, RootState } from "@/store";
-
-interface User {
-  _id: string;
-  name: string;
-  email: string;
-  role: string;
-  status: string;
-  department?: string;
-  phone?: string;
-  avatar?: string;
-  position?: string;
-  createdAt?: string;
-  lastLogin?: string;
-  emailVerified?: boolean;
-  twoFactorEnabled?: boolean;
-}
+import type { User } from "@/types";
 
 export default function UsersPage() {
   const router = useRouter();
@@ -79,7 +64,7 @@ export default function UsersPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [filters, setFilters] = useState({
     role: '',
-    status: '',
+    status: '' as '' | 'active' | 'inactive',
     department: '',
   });
   const [sortConfig, setSortConfig] = useState({
@@ -89,13 +74,18 @@ export default function UsersPage() {
 
   // Fetch users when component mounts or filters change
   useEffect(() => {
+    const cleanFilters: any = {
+      search: searchTerm || undefined,
+    };
+    
+    if (filters.role) cleanFilters.role = filters.role;
+    if (filters.status) cleanFilters.status = filters.status as 'active' | 'inactive';
+    if (filters.department) cleanFilters.department = filters.department;
+    
     dispatch(fetchUsers({
       page: pagination.page,
       limit: pagination.limit,
-      filters: {
-        search: searchTerm,
-        ...filters
-      },
+      filters: cleanFilters,
       sort: {
         field: sortConfig.field as keyof User,
         direction: sortConfig.direction
@@ -201,7 +191,7 @@ export default function UsersPage() {
             {user.status}
           </Badge>
           {user.emailVerified && (
-            <Shield className="h-4 w-4 text-green-600" title="Email Verified" />
+            <Shield className="h-4 w-4 text-green-600" />
           )}
         </div>
       )
@@ -229,12 +219,12 @@ export default function UsersPage() {
     {
       label: 'Edit User',
       icon: Edit,
-      onClick: (user: User) => router.push(`/users/edit/${user._id}`),
+      onClick: (user: User) => user._id && router.push(`/users/edit/${user._id}`),
     },
     {
       label: 'Delete User',
       icon: Trash2,
-      onClick: (user: User) => handleDeleteUser(user._id, user.name),
+      onClick: (user: User) => user._id && handleDeleteUser(user._id, user.name),
       variant: 'destructive',
       disabled: (user: User) => user.role === 'admin'
     }
@@ -436,12 +426,16 @@ export default function UsersPage() {
             data={users}
             columns={columns}
             loading={loading}
-            pagination={pagination}
+            totalCount={pagination.total}
+            pageSize={pagination.limit}
+            currentPage={pagination.page}
+            onPageChange={(page) => dispatch(setPagination({ page }))}
+            onPageSizeChange={(limit) => dispatch(setPagination({ limit }))}
             onSort={handleSort}
-            sortConfig={sortConfig}
-            actionMenuItems={actionMenuItems}
+            sortColumn={sortConfig.field as keyof User}
+            sortDirection={sortConfig.direction}
+            actions={actionMenuItems}
             emptyMessage="No users found"
-            emptyDescription="Get started by adding your first user"
           />
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -481,7 +475,7 @@ export default function UsersPage() {
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem 
-                          onClick={() => handleDeleteUser(user._id, user.name)}
+                          onClick={() => user._id && handleDeleteUser(user._id, user.name)}
                           className="text-destructive"
                           disabled={user.role === 'admin'}
                         >
@@ -506,7 +500,7 @@ export default function UsersPage() {
                     <div className="flex items-center gap-2">
                       <Badge variant={getStatusVariant(user.status)}>{user.status}</Badge>
                       {user.emailVerified && (
-                        <Shield className="h-4 w-4 text-green-600" title="Verified" />
+                        <Shield className="h-4 w-4 text-green-600" />
                       )}
                     </div>
                   </div>

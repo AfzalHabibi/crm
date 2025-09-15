@@ -12,6 +12,7 @@ import GenericForm from "@/components/ui/generic-form";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { AdminLayout } from "@/components/layout/admin-layout";
 
 // User creation schema
 const createUserSchema = z.object({
@@ -148,7 +149,7 @@ export default function AddUserPage() {
   ];
 
   return (
-    <div className="container mx-auto py-8 space-y-6">
+    <AdminLayout>
       {/* Page Header */}
       <PageHeader
         title="Add New User"
@@ -177,6 +178,6 @@ export default function AddUserPage() {
           gridCols={2}
         />
       </div>
-    </div>
+  </AdminLayout>
   );
 }

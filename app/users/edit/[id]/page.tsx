@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { ArrowLeft, Save, UserCheck, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { AdminLayout } from "@/components/layout/admin-layout";
 
 interface UserFormData {
   name: string;
@@ -237,7 +238,7 @@ export default function EditUserPage() {
   }
 
   return (
-    <div className="container mx-auto py-8">
+    <AdminLayout>
       <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="flex items-center gap-4 mb-6">
@@ -591,6 +592,6 @@ export default function EditUserPage() {
           </div>
         </form>
       </div>
-    </div>
+   </AdminLayout>
   );
 }
