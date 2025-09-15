@@ -213,19 +213,19 @@ export default function UsersPage() {
   const actionMenuItems = [
     {
       label: 'Quick View',
-      icon: Eye,
+      icon: <Eye className="h-4 w-4" />,
       onClick: (user: User) => handleQuickView(user),
     },
     {
       label: 'Edit User',
-      icon: Edit,
+      icon: <Edit className="h-4 w-4" />,
       onClick: (user: User) => user._id && router.push(`/users/edit/${user._id}`),
     },
     {
       label: 'Delete User',
-      icon: Trash2,
+      icon: <Trash2 className="h-4 w-4" />,
       onClick: (user: User) => user._id && handleDeleteUser(user._id, user.name),
-      variant: 'destructive',
+      variant: 'destructive' as const,
       disabled: (user: User) => user.role === 'admin'
     }
   ];
